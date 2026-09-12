@@ -1,14 +1,16 @@
 # Databricks SDP — Code Pattern Reference
 
-This reference documents the **exact code patterns** to be generated for each
-section of an SDP project. All patterns are derived from the proven
-`Industry Level SDP` codebase.
+This reference documents the **exact code patterns** to generate for each section
+of an SDP project. All patterns use `<placeholder>` notation — never real values.
+
+> **Convention**: `<catalog>` = Unity Catalog name, `<raw>` = raw schema,
+> `<clean>` = Silver schema, `<gold>` = Gold schema (e.g. `datawarehouse`)
 
 ---
 
-## Bronze Layer — `raw_ingestion_batch.py`
+## Bronze Layer — `src/01_bronze/datalake_files/raw_ingestion_batch.py`
 
-**Always generated verbatim.** The config loop is fixed; only `config.json` changes.
+**Always generated verbatim.** Only `config.json` in the same folder changes per project.
 
 ```python
 from pyspark import pipelines as dp
@@ -63,13 +65,36 @@ with open("config.json", mode="r") as f:
 
 ---
 
+## Bronze Layer — `src/01_bronze/datalake_files/config.json` (template)
+
+```json
+{
+  "tables": [
+    {
+      "name": "<catalog>.<raw>.<table_name>",
+      "table_properties": {},
+      "schema": "<col1> STRING, <col2> STRING, insert_date TIMESTAMP",
+      "file_format": "csv",
+      "source_path": "/Volumes/<catalog>/<raw>/source/<table_name>/",
+      "header": "true",
+      "delimiter": ","
+    }
+  ]
+}
+```
+
+> **Note**: `insert_date TIMESTAMP` is always the last column in the schema string.
+> It is added automatically by the pipeline at ingest time.
+
+---
+
 ## Silver Layer — Pattern A: SCD Type 2 (snapshot deduplication)
 
 Use when `scd_type == "2"`. Generates three blocks per table.
 
 ### Block 1 — Create Streaming Table target
 ```python
-dp.create_streaming_table(name="<catalog>.<clean_schema>.<table_name>")
+dp.create_streaming_table(name="<catalog>.<clean>.<table_name>")
 ```
 
 ### Block 2 — Temporary view with dedup + casts + expectations
@@ -81,73 +106,77 @@ dp.create_streaming_table(name="<catalog>.<clean_schema>.<table_name>")
 def <table_name>_latest_snapshot():
     window_spec = Window.partitionBy("<pk_col>").orderBy(F.col("insert_date").desc())
     return (
-        dp.read("<raw_table>")
+        dp.read("<catalog>.<raw>.<table_name>")
         .withColumn("rn", F.row_number().over(window_spec))
         .filter(F.col("rn") == 1)
         .drop("rn")
-        # --- cast_columns (generated per entry) ---
+        # --- cast_columns (one per entry in sdp_config) ---
         .withColumn("<col>", F.col("<col>").cast("<target_type>"))
     )
 ```
 
-> **Rule decorator ordering**: `@dp.expect_or_fail` → `@dp.expect` → `@dp.expect_or_drop`
-> decorators are applied in reverse Python order (outermost = last applied),
-> so place them closest to the function in priority order: fail > drop > warn.
+> **Rule decorator ordering**: Place `@dp.expect_or_fail` closest to the function
+> (innermost), then `@dp.expect`. Python applies decorators bottom-up.
 
 ### Block 3 — CDC flow
 ```python
 dp.create_auto_cdc_from_snapshot_flow(
-    target="<catalog>.<clean_schema>.<table_name>",
+    target="<catalog>.<clean>.<table_name>",
     source="<table_name>_latest_snapshot",
     keys=["<pk_col>"],
     stored_as_scd_type="2",
 )
 ```
 
-### Full SCD2 Example (customers)
+### Full SCD2 Example — no expectations, no casts
 ```python
-# Customer Clean
-dp.create_streaming_table(name="ath_catalog.clean.customers")
+# ============================================================
+# <TableName> Clean (SCD Type 2)
+# ============================================================
+dp.create_streaming_table(name="<catalog>.<clean>.<table_name>")
 
-@dp.temporary_view(name="customers_latest_snapshot")
-def customers_latest_snapshot():
-    window_spec = Window.partitionBy("customer_id").orderBy(F.col("insert_date").desc())
+@dp.temporary_view(name="<table_name>_latest_snapshot")
+def <table_name>_latest_snapshot():
+    window_spec = Window.partitionBy("<pk_col>").orderBy(F.col("insert_date").desc())
     return (
-        dp.read("ath_catalog.raw.customers")
+        dp.read("<catalog>.<raw>.<table_name>")
         .withColumn("rn", F.row_number().over(window_spec))
         .filter(F.col("rn") == 1)
         .drop("rn")
     )
 
 dp.create_auto_cdc_from_snapshot_flow(
-    target="ath_catalog.clean.customers",
-    source="customers_latest_snapshot",
-    keys=["customer_id"],
+    target="<catalog>.<clean>.<table_name>",
+    source="<table_name>_latest_snapshot",
+    keys=["<pk_col>"],
     stored_as_scd_type="2",
 )
 ```
 
-### SCD2 with expectations and casts (products)
+### SCD2 with expectations and casts
 ```python
-dp.create_streaming_table(name="ath_catalog.clean.products_scd")
+# ============================================================
+# <TableName> Clean (SCD Type 2 — with quality checks + casts)
+# ============================================================
+dp.create_streaming_table(name="<catalog>.<clean>.<table_name>_scd")
 
-@dp.temporary_view(name="products_latest_snapshot")
-@dp.expect_or_fail("validate_product_id", "product_id IS NOT NULL")
-@dp.expect("validate_product_name", "product_name IS NOT NULL")
-def products_latest_snapshot():
-    window_spec = Window.partitionBy("product_id").orderBy(F.col("insert_date").desc())
+@dp.temporary_view(name="<table_name>_latest_snapshot")
+@dp.expect_or_fail("validate_<pk_col>", "<pk_col> IS NOT NULL")
+@dp.expect("validate_<name_col>", "<name_col> IS NOT NULL")
+def <table_name>_latest_snapshot():
+    window_spec = Window.partitionBy("<pk_col>").orderBy(F.col("insert_date").desc())
     return (
-        dp.read("ath_catalog.raw.products")
+        dp.read("<catalog>.<raw>.<table_name>")
         .withColumn("rn", F.row_number().over(window_spec))
         .filter(F.col("rn") == 1)
         .drop("rn")
-        .withColumn("unit_price", F.col("unit_price").cast("decimal(10,2)"))
+        .withColumn("<amount_col>", F.col("<amount_col>").cast("decimal(10,2)"))
     )
 
 dp.create_auto_cdc_from_snapshot_flow(
-    target="ath_catalog.clean.products_scd",
-    source="products_latest_snapshot",
-    keys=["product_id"],
+    target="<catalog>.<clean>.<table_name>_scd",
+    source="<table_name>_latest_snapshot",
+    keys=["<pk_col>"],
     stored_as_scd_type="2",
 )
 ```
@@ -171,106 +200,105 @@ Use for high-volume transactional tables (orders, sales, events).
 }
 
 @dp.table(
-    name="<catalog>.<clean_schema>.<table_name>",
+    name="<catalog>.<clean>.<table_name>",
     cluster_by_auto=True,
 )
-@dp.expect_all(<table_name>_rules)           # if expect_all defined
+@dp.expect_all(<table_name>_rules)             # if expect_all defined
 @dp.expect_all_or_drop(<table_name>_drop_rules)  # if expect_all_or_drop defined
-@dp.expect_or_drop("<rule_name>", "<sql>")  # single-rule drop expectations
+@dp.expect_or_drop("<rule_name>", "<sql>")     # single-rule drop expectations
 def clean_<table_name>():
     return (
-        dp.read_stream("<raw_table>")
+        dp.read_stream("<catalog>.<raw>.<table_name>")
         .withColumn("<col>", F.col("<col>").cast("<target_type>"))
-        ...
     )
 ```
 
-### Full Streaming Example (orders)
+### Full Streaming Example — with expect_all + expect_all_or_drop + casts
 ```python
-order_rules = {
-    "validate_order_id":    "order_id IS NOT NULL",
-    "validate_customer_id": "customer_id IS NOT NULL",
-    "validate_warehouse_id":"warehouse_id IS NOT NULL",
-    "validate_product_id":  "product_id IS NOT NULL",
+# ============================================================
+# <TableName> Clean (Streaming Append — fact/event table)
+# ============================================================
+<table_name>_rules = {
+    "validate_<pk_col>":   "<pk_col> IS NOT NULL",
+    "validate_<fk_col>":   "<fk_col> IS NOT NULL",
 }
 
-order_drop_rules = {
-    "valid_amount":   "amount IS NOT NULL",
-    "valid_quantity": "quantity IS NOT NULL",
+<table_name>_drop_rules = {
+    "valid_<amount_col>":   "<amount_col> IS NOT NULL",
+    "valid_<qty_col>": "<qty_col> IS NOT NULL",
 }
 
 @dp.table(
-    name="ath_catalog.clean.orders",
+    name="<catalog>.<clean>.<table_name>",
     cluster_by_auto=True,
 )
-@dp.expect_all(order_rules)
-@dp.expect_all_or_drop(order_drop_rules)
-def clean_orders():
+@dp.expect_all(<table_name>_rules)
+@dp.expect_all_or_drop(<table_name>_drop_rules)
+def clean_<table_name>():
     return (
-        dp.read_stream("ath_catalog.raw.orders")
-        .withColumn("amount",   F.col("amount").cast("decimal(10,2)"))
-        .withColumn("quantity", F.col("quantity").cast("int"))
+        dp.read_stream("<catalog>.<raw>.<table_name>")
+        .withColumn("<amount_col>", F.col("<amount_col>").cast("decimal(10,2)"))
+        .withColumn("<qty_col>",    F.col("<qty_col>").cast("int"))
     )
 ```
 
 ---
 
-## Gold Layer — Dimension Pattern
+## Gold Layer — Dimension Pattern (`src/03_gold/dimensions.py`)
 
 ```python
 @dp.materialized_view(
-    name="<gold_table>",
+    name="<catalog>.<gold>.<dim_name>",
     comment="<comment>",
 )
 def <dim_name>():
     window_spec = Window.orderBy("<natural_key>")
 
     return (
-        dp.read("<source_clean_table>")
+        dp.read("<catalog>.<clean>.<source_table>")
         # Only include if is_scd2_source == true:
         .filter(F.col("__END_AT").isNull())
         .withColumn("<surrogate_key>", F.row_number().over(window_spec))
         .select(
             "<surrogate_key>",
+            "<natural_key>",
             "<col_1>",
             "<col_2>",
-            ...
             F.col("insert_date").alias("source_insert_date"),
             F.current_timestamp().alias("load_date"),
         )
     )
 ```
 
-### Dimension with parent dim join (dim_product → dim_product_category)
+### Dimension with parent dim join (enrichment pattern)
 
 ```python
-@dp.materialized_view(
-    name="ath_catalog.datawarehouse.dim_product",
-    comment="Product dimension enriched with category surrogate keys",
-)
-def dim_product():
-    window_spec = Window.orderBy("product_id")
+# NOTE: Define <parent_dim> BEFORE <child_dim> so it can be consumed downstream
 
-    products = (
-        dp.read("ath_catalog.clean.products_scd")
+@dp.materialized_view(
+    name="<catalog>.<gold>.<child_dim_name>",
+    comment="<child_dim> enriched with <parent_dim> surrogate keys",
+)
+def <child_dim_name>():
+    window_spec = Window.orderBy("<natural_key>")
+
+    rows = (
+        dp.read("<catalog>.<clean>.<child_source_table>")
         .filter(F.col("__END_AT").isNull())
         .alias("p")
     )
-    categories = dp.read("ath_catalog.datawarehouse.dim_product_category").alias("c")
+    parent = dp.read("<catalog>.<gold>.<parent_dim_table>").alias("c")
 
     return (
-        products.join(categories, F.col("p.category_id") == F.col("c.category_id"), "left")
-        .withColumn("product_key", F.row_number().over(window_spec))
+        rows.join(parent, F.col("p.<join_key>") == F.col("c.<join_key>"), "left")
+        .withColumn("<surrogate_key>", F.row_number().over(window_spec))
         .select(
-            "product_key",
-            "p.product_id",
-            "p.product_name",
-            F.coalesce(F.col("c.category_key"),    F.lit(-1)).alias("category_key"),
-            F.coalesce(F.col("p.category_id"),     F.lit("-1")).alias("category_id"),
-            F.coalesce(F.col("c.category_name"),   F.lit("Unknown")).alias("category_name"),
-            F.coalesce(F.col("c.description"),     F.lit("Unknown Category")).alias("category_description"),
-            "p.unit_price",
-            "p.sku",
+            "<surrogate_key>",
+            "p.<natural_key>",
+            "p.<col_1>",
+            F.coalesce(F.col("c.<parent_sk>"),    F.lit(-1)).alias("<parent_sk>"),
+            F.coalesce(F.col("c.<parent_col>"),   F.lit("Unknown")).alias("<parent_col>"),
+            "p.<measure_col>",
             F.col("p.insert_date").alias("source_insert_date"),
             F.current_timestamp().alias("load_date"),
         )
@@ -279,74 +307,69 @@ def dim_product():
 
 ---
 
-## Gold Layer — Fact Pattern
+## Gold Layer — Fact Pattern (`src/03_gold/facts.py`)
 
 ```python
 @dp.materialized_view(
-    name="<gold_table>",
+    name="<catalog>.<gold>.<fact_name>",
     comment="<comment>",
 )
 def <fact_name>():
     # 1. Read the clean fact grain
-    <fact_alias> = dp.read("<source_clean_table>").alias("<fact_alias>")
+    <fact_alias> = dp.read("<catalog>.<clean>.<source_table>").alias("<fact_alias>")
 
     # 2. Read gold dimensions for surrogate keys
-    dim_<alias> = dp.read("<dim_gold_table>").alias("<alias>")
-    ...
+    dim_<alias1> = dp.read("<catalog>.<gold>.<dim_1_table>").alias("<alias1>")
+    dim_<alias2> = dp.read("<catalog>.<gold>.<dim_2_table>").alias("<alias2>")
 
     return (
         <fact_alias>
-        .join(dim_<alias>, F.col("<fact_alias>.<fact_fk>") == F.col("<alias>.<dim_natural_key>"), "left")
-        ...
+        # Left joins — never drop fact rows when dim is missing
+        .join(dim_<alias1>, F.col("<fact_alias>.<fk1>") == F.col("<alias1>.<dim_nk1>"), "left")
+        .join(dim_<alias2>, F.col("<fact_alias>.<fk2>") == F.col("<alias2>.<dim_nk2>"), "left")
         .select(
             "<fact_alias>.<natural_key>",
-            # Surrogate key with null-guard
-            F.coalesce(F.col("<alias>.<dim_surrogate_key>"), F.lit(-1)).alias("<dim_surrogate_key>"),
-            ...
+            # Surrogate keys with null-guard (use -1 for unknown dimension)
+            F.coalesce(F.col("<alias1>.<sk1>"), F.lit(-1)).alias("<sk1>"),
+            F.coalesce(F.col("<alias2>.<sk2>"), F.lit(-1)).alias("<sk2>"),
             # Measure columns
             "<fact_alias>.<measure_1>",
-            ...
+            "<fact_alias>.<measure_2>",
             F.current_timestamp().alias("load_date"),
         )
     )
 ```
 
-### Fact with bridge table (fct_sales — gets dim FKs via orders)
+### Fact with bridge table (when fact lacks FK — must join via intermediate table)
 
 ```python
 @dp.materialized_view(
-    name="ath_catalog.datawarehouse.fct_sales",
-    comment="Sales fact table enriched with dimension surrogate keys",
+    name="<catalog>.<gold>.<fact_name>",
+    comment="<fact_name> enriched with dimension surrogate keys",
 )
-def fct_sales():
-    sales  = dp.read("ath_catalog.clean.sales").alias("s")
+def <fact_name>():
+    fact = dp.read("<catalog>.<clean>.<fact_source_table>").alias("f")
 
-    # Bridge: orders carries the dimension foreign keys for sales
-    orders = dp.read("ath_catalog.clean.orders").select(
-        "order_id", "customer_id", "warehouse_id", "product_id"
-    ).alias("o")
+    # Bridge: <bridge_table> carries the FK columns that <fact_source_table> lacks
+    bridge = dp.read("<catalog>.<clean>.<bridge_table>").select(
+        "<bridge_join_key>", "<fk_1>", "<fk_2>", "<fk_3>"
+    ).alias("b")
 
-    dim_cust = dp.read("ath_catalog.datawarehouse.dim_customer").alias("c")
-    dim_wh   = dp.read("ath_catalog.datawarehouse.dim_warehouse").alias("w")
-    dim_prod = dp.read("ath_catalog.datawarehouse.dim_product").alias("p")
+    dim_1 = dp.read("<catalog>.<gold>.<dim_1_table>").alias("d1")
+    dim_2 = dp.read("<catalog>.<gold>.<dim_2_table>").alias("d2")
 
     return (
-        sales
-        .join(orders,    F.col("s.order_id")     == F.col("o.order_id"),     "left")
-        .join(dim_cust,  F.col("o.customer_id")  == F.col("c.customer_id"),  "left")
-        .join(dim_wh,    F.col("o.warehouse_id") == F.col("w.warehouse_id"), "left")
-        .join(dim_prod,  F.col("o.product_id")   == F.col("p.product_id"),   "left")
+        fact
+        .join(bridge, F.col("f.<bridge_join_key>") == F.col("b.<bridge_join_key>"), "left")
+        .join(dim_1,  F.col("b.<fk_1>")  == F.col("d1.<dim_1_nk>"),  "left")
+        .join(dim_2,  F.col("b.<fk_2>")  == F.col("d2.<dim_2_nk>"),  "left")
         .select(
-            "s.sale_id",
-            "s.order_id",
-            F.coalesce(F.col("c.customer_key"),  F.lit(-1)).alias("customer_key"),
-            F.coalesce(F.col("w.warehouse_key"), F.lit(-1)).alias("warehouse_key"),
-            F.coalesce(F.col("p.product_key"),   F.lit(-1)).alias("product_key"),
-            "s.sale_datetime",
-            "s.payment_method",
-            "s.gross_amount",
-            "s.discount_amount",
-            "s.net_amount",
+            "f.<natural_key>",
+            "f.<bridge_join_key>",
+            F.coalesce(F.col("d1.<sk_1>"), F.lit(-1)).alias("<sk_1>"),
+            F.coalesce(F.col("d2.<sk_2>"), F.lit(-1)).alias("<sk_2>"),
+            "f.<measure_1>",
+            "f.<measure_2>",
             F.current_timestamp().alias("load_date"),
         )
     )
@@ -354,77 +377,13 @@ def fct_sales():
 
 ---
 
-## Databricks Asset Bundle (DAB) Files
+## Key Code Generation Rules
 
-### `databricks.yml`
-
-```yaml
-bundle:
-  name: <project_name>
-
-include:
-  - resources/*.yml
-
-variables:
-  catalog:
-    description: The catalog to use
-  schema:
-    description: The schema to use
-
-targets:
-  dev:
-    mode: development
-    default: true
-    workspace:
-      host: <workspace_host>
-    variables:
-      catalog: <catalog>
-      schema: ${workspace.current_user.short_name}
-  prod:
-    mode: production
-    workspace:
-      host: <workspace_host>
-      root_path: /Workspace/Users/<owner_email>/.bundle/${bundle.name}/${bundle.target}
-    variables:
-      catalog: <catalog>
-      schema: prod
-    permissions:
-      - user_name: <owner_email>
-        level: CAN_MANAGE
-```
-
-### `resources/<project_name>_pipeline.pipeline.yml`
-
-```yaml
-resources:
-  pipelines:
-    <project_name>_etl:
-      name: <project_name>_etl
-      catalog: ${var.catalog}
-      schema: ${var.schema}
-      serverless: true
-
-      libraries:
-        - glob:
-            include: ../src/01_bronze/**/*.py
-        - glob:
-            include: ../src/02_silver/**/*.py
-        - glob:
-            include: ../src/03_gold/**/*.py
-
-      environment:
-        dependencies:
-          - --editable ${workspace.file_path}
-```
-
----
-
-## Key Rules for Code Generation
-
-1. **Always use `F.coalesce(..., F.lit(-1))`** for integer surrogate keys in facts — maintains referential integrity when a dim record is missing.
-2. **String surrogate keys use `F.lit("-1")`** (quoted) — e.g. when a natural key is a VARCHAR.
-3. **`insert_date` is always renamed** to `source_insert_date` in Gold dims/facts, and `F.current_timestamp()` → `load_date` is always appended.
+1. **`F.coalesce(..., F.lit(-1))`** for integer surrogate keys in facts — maintains referential integrity when a dim record is missing.
+2. **String surrogate keys use `F.lit("-1")`** (quoted) — e.g. when the natural key is VARCHAR.
+3. **`insert_date` is always renamed** to `source_insert_date` in Gold dims/facts; `F.current_timestamp()` → `load_date` is appended.
 4. **SCD2 dimensions always filter** `.filter(F.col("__END_AT").isNull())` to get current records only.
-5. **Rule decorator order** on `@dp.temporary_view`: place `expect_or_fail` outermost (closest to function wins in Python decoration), then `expect_or_drop`, then `expect`.
-6. **`cluster_by_auto=True`** on all streaming append Silver tables. Not used on CDC streaming tables.
+5. **Decorator order on `@dp.temporary_view`**: `expect_or_fail` closest to function, then `expect_or_drop`, then `expect`.
+6. **`cluster_by_auto=True`** on streaming append Silver tables only — not on SCD2 CDC tables.
 7. **`dp.read()` for SCD2 snapshot** views (batch). **`dp.read_stream()`** for append fact tables.
+8. **`config.json` lives at `src/01_bronze/datalake_files/config.json`** — same folder as `raw_ingestion_batch.py`.

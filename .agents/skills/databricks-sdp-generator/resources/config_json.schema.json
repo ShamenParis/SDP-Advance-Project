@@ -19,7 +19,7 @@
             "type": "string",
             "description": "Full three-part table name: catalog.schema.table",
             "pattern": "^[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+$",
-            "examples": ["data_team.raw.customers"]
+            "examples": ["<your_catalog>.raw.customers"]
           },
           "table_properties": {
             "type": "object",
@@ -41,7 +41,7 @@
             "type": "string",
             "description": "Volume path or external location URI",
             "examples": [
-              "/Volumes/data_team/raw/source/customers/",
+              "/Volumes/<your_catalog>/raw/source/customers/",
               "s3://my-bucket/landing/customers/"
             ]
           },

@@ -68,7 +68,7 @@ or an External Location registered in Databricks.
 
 Example:
 ```
-/Volumes/data_team/raw/source/customers/
+/Volumes/<your_catalog>/raw/source/<table_name>/
 ```
 
 ### External Location path format
