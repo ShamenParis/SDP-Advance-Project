@@ -1,0 +1,303 @@
+{
+  "project": {
+    "name": "industry_level_sdp",
+    "catalog": "ath_catalog",
+    "schemas": {
+      "raw": "raw",
+      "clean": "clean",
+      "gold": "datawarehouse"
+    },
+    "workspace_host": "https://dbc-eb4706a8-23c4.cloud.databricks.com",
+    "owner_email": "aeshantechhub@gmail.com"
+  },
+
+  "ingestion": {
+    "source_type": "files",
+    "tables": [
+      {
+        "name": "customers",
+        "raw_table": "ath_catalog.raw.customers",
+        "schema": "customer_id STRING,first_name STRING,last_name STRING,email STRING,phone STRING,city STRING,country STRING,insert_date TIMESTAMP",
+        "source_path": "/Volumes/data_team/raw/source/customers/",
+        "file_format": "csv",
+        "header": "true",
+        "delimiter": ",",
+        "table_properties": {}
+      },
+      {
+        "name": "orders",
+        "raw_table": "ath_catalog.raw.orders",
+        "schema": "order_id STRING,customer_id STRING,order_datetime STRING,warehouse_id STRING,product_id STRING,amount STRING,quantity STRING,insert_date TIMESTAMP",
+        "source_path": "/Volumes/data_team/raw/source/orders/",
+        "file_format": "csv",
+        "header": "true",
+        "delimiter": ",",
+        "table_properties": {}
+      },
+      {
+        "name": "sales",
+        "raw_table": "ath_catalog.raw.sales",
+        "schema": "sale_id STRING,order_id STRING,sale_datetime STRING,payment_method STRING,gross_amount STRING,discount_amount STRING,net_amount STRING,insert_date TIMESTAMP",
+        "source_path": "/Volumes/data_team/raw/source/sales/",
+        "file_format": "csv",
+        "header": "true",
+        "delimiter": ",",
+        "table_properties": {}
+      },
+      {
+        "name": "products",
+        "raw_table": "ath_catalog.raw.products",
+        "schema": "product_id STRING,product_name STRING,category_id STRING,unit_price STRING,sku STRING,insert_date TIMESTAMP",
+        "source_path": "/Volumes/data_team/raw/source/products/",
+        "file_format": "csv",
+        "header": "true",
+        "delimiter": ",",
+        "table_properties": {}
+      },
+      {
+        "name": "product_category",
+        "raw_table": "ath_catalog.raw.product_category",
+        "schema": "category_id STRING,category_name STRING,description STRING,insert_date TIMESTAMP",
+        "source_path": "/Volumes/data_team/raw/source/product_category/",
+        "file_format": "csv",
+        "header": "true",
+        "delimiter": ",",
+        "table_properties": {}
+      },
+      {
+        "name": "warehouse",
+        "raw_table": "ath_catalog.raw.warehouse",
+        "schema": "warehouse_id STRING,warehouse_name STRING,location STRING,capacity_sqft STRING,manager_name STRING,insert_date TIMESTAMP",
+        "source_path": "/Volumes/data_team/raw/source/warehouse/",
+        "file_format": "csv",
+        "header": "true",
+        "delimiter": ",",
+        "table_properties": {}
+      }
+    ]
+  },
+
+  "clean": {
+    "tables": [
+      {
+        "name": "customers",
+        "raw_table": "ath_catalog.raw.customers",
+        "clean_table": "ath_catalog.clean.customers",
+        "primary_keys": ["customer_id"],
+        "scd_type": "2",
+        "streaming": false,
+        "expect_or_fail": {},
+        "expect": {},
+        "expect_or_drop": {},
+        "expect_all": {},
+        "expect_all_or_drop": {},
+        "cast_columns": []
+      },
+      {
+        "name": "warehouse",
+        "raw_table": "ath_catalog.raw.warehouse",
+        "clean_table": "ath_catalog.clean.warehouse",
+        "primary_keys": ["warehouse_id"],
+        "scd_type": "2",
+        "streaming": false,
+        "expect_or_fail": {},
+        "expect": {},
+        "expect_or_drop": {},
+        "expect_all": {},
+        "expect_all_or_drop": {},
+        "cast_columns": []
+      },
+      {
+        "name": "products",
+        "raw_table": "ath_catalog.raw.products",
+        "clean_table": "ath_catalog.clean.products_scd",
+        "clean_table_suffix": "_scd",
+        "primary_keys": ["product_id"],
+        "scd_type": "2",
+        "streaming": false,
+        "expect_or_fail": {"validate_product_id": "product_id IS NOT NULL"},
+        "expect": {"validate_product_name": "product_name IS NOT NULL"},
+        "expect_or_drop": {},
+        "expect_all": {},
+        "expect_all_or_drop": {},
+        "cast_columns": [
+          {"column": "unit_price", "target_type": "decimal(10,2)"}
+        ]
+      },
+      {
+        "name": "sales",
+        "raw_table": "ath_catalog.raw.sales",
+        "clean_table": "ath_catalog.clean.sales",
+        "primary_keys": [],
+        "scd_type": "1",
+        "streaming": true,
+        "expect_or_fail": {},
+        "expect": {},
+        "expect_or_drop": {"valid_net_amount": "net_amount IS NOT NULL"},
+        "expect_all": {
+          "validate_order_id": "order_id IS NOT NULL",
+          "validate_payment_method": "payment_method IS NOT NULL"
+        },
+        "expect_all_or_drop": {},
+        "cast_columns": [
+          {"column": "gross_amount",    "target_type": "decimal(10,2)"},
+          {"column": "discount_amount", "target_type": "decimal(10,2)"},
+          {"column": "net_amount",      "target_type": "decimal(10,2)"}
+        ]
+      },
+      {
+        "name": "orders",
+        "raw_table": "ath_catalog.raw.orders",
+        "clean_table": "ath_catalog.clean.orders",
+        "primary_keys": [],
+        "scd_type": "1",
+        "streaming": true,
+        "expect_or_fail": {},
+        "expect": {},
+        "expect_or_drop": {},
+        "expect_all": {
+          "validate_order_id":    "order_id IS NOT NULL",
+          "validate_customer_id": "customer_id IS NOT NULL",
+          "validate_warehouse_id":"warehouse_id IS NOT NULL",
+          "validate_product_id":  "product_id IS NOT NULL"
+        },
+        "expect_all_or_drop": {
+          "valid_amount":   "amount IS NOT NULL",
+          "valid_quantity": "quantity IS NOT NULL"
+        },
+        "cast_columns": [
+          {"column": "amount",   "target_type": "decimal(10,2)"},
+          {"column": "quantity", "target_type": "int"}
+        ]
+      }
+    ]
+  },
+
+  "gold": {
+    "dimensions": [
+      {
+        "name": "dim_warehouse",
+        "gold_table": "ath_catalog.datawarehouse.dim_warehouse",
+        "source_clean_table": "ath_catalog.clean.warehouse",
+        "is_scd2_source": true,
+        "natural_key": "warehouse_id",
+        "surrogate_key": "warehouse_key",
+        "columns": ["warehouse_id","warehouse_name","location","capacity_sqft","manager_name","insert_date"],
+        "comment": "Warehouse dimension table with surrogate keys"
+      },
+      {
+        "name": "dim_customer",
+        "gold_table": "ath_catalog.datawarehouse.dim_customer",
+        "source_clean_table": "ath_catalog.clean.customers",
+        "is_scd2_source": true,
+        "natural_key": "customer_id",
+        "surrogate_key": "customer_key",
+        "columns": ["customer_id","first_name","last_name","email","phone","city","country","insert_date"],
+        "comment": "Customer dimension table with surrogate keys"
+      },
+      {
+        "name": "dim_product_category",
+        "gold_table": "ath_catalog.datawarehouse.dim_product_category",
+        "source_clean_table": "ath_catalog.raw.product_category",
+        "is_scd2_source": false,
+        "natural_key": "category_id",
+        "surrogate_key": "category_key",
+        "columns": ["category_id","category_name","description","insert_date"],
+        "comment": "Product category dimension table with surrogate keys"
+      },
+      {
+        "name": "dim_product",
+        "gold_table": "ath_catalog.datawarehouse.dim_product",
+        "source_clean_table": "ath_catalog.clean.products_scd",
+        "is_scd2_source": true,
+        "natural_key": "product_id",
+        "surrogate_key": "product_key",
+        "columns": ["product_id","product_name","category_id","unit_price","sku","insert_date"],
+        "dim_joins": [
+          {
+            "dim_gold_table": "ath_catalog.datawarehouse.dim_product_category",
+            "join_condition": "p.category_id == c.category_id",
+            "surrogate_key": "category_key",
+            "alias": "c",
+            "extra_columns": ["category_name","description"]
+          }
+        ],
+        "comment": "Product dimension enriched with category surrogate keys"
+      }
+    ],
+
+    "facts": [
+      {
+        "name": "fct_orders",
+        "gold_table": "ath_catalog.datawarehouse.fct_orders",
+        "source_clean_table": "ath_catalog.clean.orders",
+        "natural_key": "order_id",
+        "dimension_joins": [
+          {
+            "dim_gold_table": "ath_catalog.datawarehouse.dim_customer",
+            "fact_fk": "customer_id",
+            "dim_natural_key": "customer_id",
+            "dim_surrogate_key": "customer_key",
+            "alias": "c"
+          },
+          {
+            "dim_gold_table": "ath_catalog.datawarehouse.dim_warehouse",
+            "fact_fk": "warehouse_id",
+            "dim_natural_key": "warehouse_id",
+            "dim_surrogate_key": "warehouse_key",
+            "alias": "w"
+          },
+          {
+            "dim_gold_table": "ath_catalog.datawarehouse.dim_product",
+            "fact_fk": "product_id",
+            "dim_natural_key": "product_id",
+            "dim_surrogate_key": "product_key",
+            "alias": "p"
+          }
+        ],
+        "measures": ["order_datetime","amount","quantity"],
+        "comment": "Orders fact table enriched with dimension surrogate keys"
+      },
+      {
+        "name": "fct_sales",
+        "gold_table": "ath_catalog.datawarehouse.fct_sales",
+        "source_clean_table": "ath_catalog.clean.sales",
+        "natural_key": "sale_id",
+        "dimension_joins": [
+          {
+            "dim_gold_table": "ath_catalog.datawarehouse.dim_customer",
+            "fact_fk": "customer_id",
+            "dim_natural_key": "customer_id",
+            "dim_surrogate_key": "customer_key",
+            "alias": "c",
+            "bridge_table": "ath_catalog.clean.orders",
+            "bridge_fact_key": "order_id",
+            "bridge_dim_key": "customer_id"
+          },
+          {
+            "dim_gold_table": "ath_catalog.datawarehouse.dim_warehouse",
+            "fact_fk": "warehouse_id",
+            "dim_natural_key": "warehouse_id",
+            "dim_surrogate_key": "warehouse_key",
+            "alias": "w",
+            "bridge_table": "ath_catalog.clean.orders",
+            "bridge_fact_key": "order_id",
+            "bridge_dim_key": "warehouse_id"
+          },
+          {
+            "dim_gold_table": "ath_catalog.datawarehouse.dim_product",
+            "fact_fk": "product_id",
+            "dim_natural_key": "product_id",
+            "dim_surrogate_key": "product_key",
+            "alias": "p",
+            "bridge_table": "ath_catalog.clean.orders",
+            "bridge_fact_key": "order_id",
+            "bridge_dim_key": "product_id"
+          }
+        ],
+        "measures": ["order_id","sale_datetime","payment_method","gross_amount","discount_amount","net_amount"],
+        "comment": "Sales fact table enriched with dimension surrogate keys"
+      }
+    ]
+  }
+}

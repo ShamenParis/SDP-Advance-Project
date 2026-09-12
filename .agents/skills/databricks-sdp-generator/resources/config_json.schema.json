@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "databricks-sdp-bronze-config",
+  "title": "SDP Bronze config.json",
+  "description": "Drives raw_ingestion_batch.py — one entry per source file table.",
+  "type": "object",
+  "required": ["tables"],
+  "additionalProperties": false,
+  "properties": {
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "schema", "file_format", "source_path"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full three-part table name: catalog.schema.table",
+            "pattern": "^[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+$",
+            "examples": ["data_team.raw.customers"]
+          },
+          "table_properties": {
+            "type": "object",
+            "description": "Optional Delta table properties (e.g. delta.autoOptimize.optimizeWrite: true)",
+            "additionalProperties": { "type": "string" },
+            "default": {}
+          },
+          "schema": {
+            "type": "string",
+            "description": "Spark DDL schema string. insert_date TIMESTAMP should always be last.",
+            "examples": ["customer_id STRING,first_name STRING,insert_date TIMESTAMP"]
+          },
+          "file_format": {
+            "type": "string",
+            "enum": ["csv", "json", "parquet", "avro", "orc", "text"],
+            "description": "cloudFiles.format value"
+          },
+          "source_path": {
+            "type": "string",
+            "description": "Volume path or external location URI",
+            "examples": [
+              "/Volumes/data_team/raw/source/customers/",
+              "s3://my-bucket/landing/customers/"
+            ]
+          },
+          "header": {
+            "type": "string",
+            "enum": ["true", "false"],
+            "default": "true",
+            "description": "Whether CSV files have a header row"
+          },
+          "delimiter": {
+            "type": "string",
+            "default": ",",
+            "description": "CSV column delimiter character"
+          }
+        }
+      }
+    }
+  }
+}

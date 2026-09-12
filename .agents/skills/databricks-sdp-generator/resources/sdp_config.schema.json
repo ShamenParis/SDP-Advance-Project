@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "databricks-sdp-config",
+  "title": "SDP Master Config (sdp_config.json)",
+  "description": "Master configuration file for a Databricks SDP project. Maintained by the user; drives code generation for all three medallion layers.",
+  "type": "object",
+  "required": ["project", "ingestion", "clean", "gold"],
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": ["name", "catalog", "schemas", "workspace_host", "owner_email"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Snake_case project name used for bundle name and resource naming"
+        },
+        "catalog": {
+          "type": "string",
+          "description": "Unity Catalog catalog name"
+        },
+        "schemas": {
+          "type": "object",
+          "required": ["raw", "clean", "gold"],
+          "additionalProperties": false,
+          "properties": {
+            "raw":   { "type": "string", "description": "Bronze schema (e.g. raw)" },
+            "clean": { "type": "string", "description": "Silver schema (e.g. clean)" },
+            "gold":  { "type": "string", "description": "Gold schema (e.g. datawarehouse)" }
+          }
+        },
+        "workspace_host": {
+          "type": "string",
+          "format": "uri",
+          "description": "Databricks workspace URL (e.g. https://xxx.cloud.databricks.com)"
+        },
+        "owner_email": {
+          "type": "string",
+          "format": "email",
+          "description": "Owner email used in prod bundle permissions"
+        }
+      }
+    },
+
+    "ingestion": {
+      "type": "object",
+      "required": ["source_type"],
+      "additionalProperties": false,
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "enum": ["files", "lakeflow_connect"],
+          "description": "files = Auto Loader via cloudFiles; lakeflow_connect = connector-managed Bronze"
+        },
+        "tables": {
+          "type": "array",
+          "description": "Required when source_type is 'files'. Each entry maps to a Bronze table.",
+          "items": {
+            "type": "object",
+            "required": ["name", "raw_table", "schema", "source_path", "file_format"],
+            "additionalProperties": false,
+            "properties": {
+              "name":        { "type": "string", "description": "Short table name (no catalog/schema)" },
+              "raw_table":   { "type": "string", "description": "Full three-part raw table name" },
+              "schema":      { "type": "string", "description": "Spark DDL schema string" },
+              "source_path": { "type": "string", "description": "Volume or external location path" },
+              "file_format": { "type": "string", "enum": ["csv","json","parquet","avro","orc","text"] },
+              "header":      { "type": "string", "enum": ["true","false"], "default": "true" },
+              "delimiter":   { "type": "string", "default": "," },
+              "table_properties": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "default": {}
+              }
+            }
+          }
+        },
+        "lakeflow_notes": {
+          "type": "string",
+          "description": "Optional notes about the Lakeflow connector configuration (connector name, source system, etc.)"
+        }
+      }
+    },
+
+    "clean": {
+      "type": "object",
+      "required": ["tables"],
+      "additionalProperties": false,
+      "properties": {
+        "tables": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "raw_table", "clean_table", "primary_keys", "scd_type"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "description": "Short name for this clean table" },
+              "raw_table": { "type": "string", "description": "Full raw (Bronze) table name to read from" },
+              "clean_table": { "type": "string", "description": "Full clean (Silver) output table name" },
+              "primary_keys": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1,
+                "description": "Natural key columns used for deduplication and SCD2 tracking"
+              },
+              "scd_type": {
+                "type": "string",
+                "enum": ["1", "2"],
+                "description": "SCD type: '1' = append/latest-wins, '2' = full history. SCD2 generates create_auto_cdc_from_snapshot_flow."
+              },
+              "streaming": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, use dp.read_stream (append) instead of SCD snapshot pattern. Typical for high-volume fact sources like orders, sales."
+              },
+              "expect_or_fail": {
+                "type": "object",
+                "description": "Quality rules that BLOCK the pipeline on violation. Keys are rule names, values are SQL expressions.",
+                "additionalProperties": { "type": "string" },
+                "examples": [{"validate_customer_id": "customer_id IS NOT NULL"}]
+              },
+              "expect": {
+                "type": "object",
+                "description": "Quality rules that WARN only — pipeline continues on violation.",
+                "additionalProperties": { "type": "string" }
+              },
+              "expect_or_drop": {
+                "type": "object",
+                "description": "Quality rules that DROP the offending row on violation.",
+                "additionalProperties": { "type": "string" }
+              },
+              "expect_all": {
+                "type": "object",
+                "description": "Batch warn rules applied as a dict (shorthand for multiple @dp.expect).",
+                "additionalProperties": { "type": "string" }
+              },
+              "expect_all_or_drop": {
+                "type": "object",
+                "description": "Batch drop rules applied as a dict.",
+                "additionalProperties": { "type": "string" }
+              },
+              "cast_columns": {
+                "type": "array",
+                "description": "Columns requiring type casting. Agent generates .withColumn() calls.",
+                "items": {
+                  "type": "object",
+                  "required": ["column", "target_type"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "column":      { "type": "string" },
+                    "target_type": { "type": "string", "examples": ["decimal(10,2)", "int", "timestamp", "date", "long"] }
+                  }
+                }
+              },
+              "clean_table_suffix": {
+                "type": "string",
+                "description": "Optional suffix override for SCD2 tables (e.g. '_scd' → customers_scd). Defaults to empty."
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "gold": {
+      "type": "object",
+      "required": ["dimensions", "facts"],
+      "additionalProperties": false,
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "gold_table", "source_clean_table", "natural_key", "surrogate_key", "columns"],
+            "additionalProperties": false,
+            "properties": {
+              "name":               { "type": "string", "description": "Short dimension name (e.g. dim_customer)" },
+              "gold_table":         { "type": "string", "description": "Full three-part gold table name" },
+              "source_clean_table": { "type": "string", "description": "Full clean table to read from" },
+              "is_scd2_source":     { "type": "boolean", "default": false, "description": "If true, add .filter(__END_AT is null) to get current records only" },
+              "natural_key":        { "type": "string", "description": "The business/natural key column (for Window ordering)" },
+              "surrogate_key":      { "type": "string", "description": "Surrogate key column name (generated via row_number())" },
+              "columns": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1,
+                "description": "Columns to include in the dimension select (excluding surrogate key, source_insert_date, load_date which are auto-added)"
+              },
+              "dim_joins": {
+                "type": "array",
+                "description": "Optional parent dimensions to join (e.g. dim_product joining dim_product_category for category_key)",
+                "items": {
+                  "type": "object",
+                  "required": ["dim_gold_table", "join_condition", "surrogate_key", "alias"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "dim_gold_table":  { "type": "string", "description": "Gold dim table to join to" },
+                    "join_condition":  { "type": "string", "description": "SQL join expression (left side = this table alias, right = dim alias)" },
+                    "surrogate_key":   { "type": "string", "description": "Surrogate key column to bring in from the joined dim" },
+                    "alias":           { "type": "string", "description": "Alias for the joined dim" },
+                    "extra_columns": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Additional columns to bring from the joined dim"
+                    }
+                  }
+                }
+              },
+              "comment": { "type": "string", "description": "Table comment for the materialized view" }
+            }
+          }
+        },
+
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "gold_table", "source_clean_table", "dimension_joins", "measures"],
+            "additionalProperties": false,
+            "properties": {
+              "name":               { "type": "string", "description": "Short fact name (e.g. fct_orders)" },
+              "gold_table":         { "type": "string", "description": "Full three-part gold fact table name" },
+              "source_clean_table": { "type": "string", "description": "Full clean table as the fact grain" },
+              "natural_key":        { "type": "string", "description": "The fact's natural key column (e.g. order_id)" },
+              "dimension_joins": {
+                "type": "array",
+                "description": "Each entry describes one dimension to left-join for surrogate key lookup",
+                "items": {
+                  "type": "object",
+                  "required": ["dim_gold_table", "fact_fk", "dim_natural_key", "dim_surrogate_key", "alias"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "dim_gold_table":    { "type": "string", "description": "Gold dim table to join" },
+                    "fact_fk":          { "type": "string", "description": "FK column in the fact table" },
+                    "dim_natural_key":  { "type": "string", "description": "Matching natural key in the dimension" },
+                    "dim_surrogate_key":{ "type": "string", "description": "Surrogate key column to bring from dim" },
+                    "alias":            { "type": "string", "description": "Short alias for this dim in the join" },
+                    "bridge_table": {
+                      "type": "string",
+                      "description": "Optional — if the fact doesn't have the FK directly, specify a bridge/intermediate clean table to join first"
+                    },
+                    "bridge_fact_key":  { "type": "string", "description": "FK from fact to bridge table" },
+                    "bridge_dim_key":   { "type": "string", "description": "FK from bridge to dim" }
+                  }
+                }
+              },
+              "measures": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Measure columns to include from the fact source (non-key, non-dimension columns)"
+              },
+              "comment": { "type": "string", "description": "Table comment for the materialized view" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
