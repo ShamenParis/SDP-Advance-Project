@@ -144,58 +144,44 @@ full field reference with descriptions and validation rules.
 
 ## Sharing via Unity Catalog
 
-Unity Catalog Volumes let you share this skill with your entire team across workspaces.
+Unity Catalog natively supports AI Skills as governed data assets, allowing you to publish, govern, and share this skill with your entire team across workspaces without needing Volumes or manual file distribution.
 
-### Upload the Skill to a Volume
+### Register the Skill in Unity Catalog
+
+You can register and publish the skill directly as a first-class AI asset in your catalog:
 
 ```bash
-# 1. Create a Volume in Unity Catalog (one-time, done in Databricks UI or CLI)
-#    catalog: <your_catalog>  |  schema: shared_assets  |  volume: ai_skills
-
-# 2. Upload using the Databricks CLI
-databricks fs cp -r ".agents/skills/databricks-sdp-generator" \
-  "dbfs:/Volumes/<catalog>/shared_assets/ai_skills/databricks-sdp-generator" \
-  --recursive
+# Register the skill to Unity Catalog using Databricks CLI / AI asset registration:
+databricks unity-catalog skills create \
+  --catalog <catalog> \
+  --schema <schema> \
+  --name databricks_sdp_generator \
+  --source-dir ".agents/skills/databricks-sdp-generator" \
+  --description "Interactive 5-phase generator for Databricks Medallion Structured Data Pipelines (SDP)"
 ```
 
-Or via the **Databricks UI**:
-1. Go to **Catalog** → `<your_catalog>` → `shared_assets` → `ai_skills`
-2. Click **Upload** and select the `databricks-sdp-generator/` folder
+Or register via the **Databricks UI (Catalog Explorer)**:
+1. Navigate to **Catalog** → `<your_catalog>` → `<your_schema>`.
+2. Select **Register Asset** / **Create** → **Skill / AI Asset**.
+3. Point to the `databricks-sdp-generator` package and confirm registration.
 
-### Grant Access to Others
+### Govern & Grant Access
+
+Because the skill is a native Unity Catalog securable asset, manage permissions with standard UC access controls:
 
 ```sql
--- In a Databricks SQL Editor or notebook:
-GRANT READ VOLUME
-  ON VOLUME <catalog>.shared_assets.ai_skills
-  TO `data-engineers@your-company.com`;
+-- Grant permission to data engineering teams
+GRANT USE CATALOG ON CATALOG <catalog> TO `data-engineers@your-company.com`;
+GRANT USE SCHEMA ON SCHEMA <catalog>.<schema> TO `data-engineers@your-company.com`;
+GRANT EXECUTE ON SKILL <catalog>.<schema>.databricks_sdp_generator TO `data-engineers@your-company.com`;
 ```
 
-### Team Members: Install the Skill Locally
+### Team Discovery & Workspace Usage
 
-Team members pull the skill into their own project:
-
-```bash
-# Option A — Copy from the Volume to local project
-databricks fs cp -r \
-  "dbfs:/Volumes/<catalog>/shared_assets/ai_skills/databricks-sdp-generator" \
-  ".agents/skills/databricks-sdp-generator" \
-  --recursive
-
-# Option B — Clone from the shared Git repo (if this project is in Git)
-git clone <repo_url>
-# The .agents/ folder is included in the repo — skill is ready to use
-```
-
-### Keep the Volume in Sync
-
-When the skill is updated, push the new version:
-
-```bash
-databricks fs cp -r ".agents/skills/databricks-sdp-generator" \
-  "dbfs:/Volumes/<catalog>/shared_assets/ai_skills/databricks-sdp-generator" \
-  --recursive --overwrite
-```
+Once published to Unity Catalog:
+- **Discoverable**: The skill appears in Catalog Explorer under your schema alongside tables, volumes, and functions.
+- **Direct Workspace Integration**: Team members and Databricks Genie Code / AI Assistant can discover and invoke `<catalog>.<schema>.databricks_sdp_generator` directly across any connected workspace.
+- **Centralized Versioning**: Updates made to the cataloged skill asset are immediately available to all workspace users without manual syncing.
 
 ---
 
