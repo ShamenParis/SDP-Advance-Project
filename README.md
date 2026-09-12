@@ -146,35 +146,6 @@ full field reference with descriptions and validation rules.
 
 Unity Catalog natively supports AI Skills as governed data assets, allowing you to publish, govern, and share this skill with your entire team across workspaces without needing Volumes or manual file distribution.
 
-### Register the Skill in Unity Catalog
-
-You can register and publish the skill directly as a first-class AI asset in your catalog:
-
-```bash
-# Register the skill to Unity Catalog using Databricks CLI / AI asset registration:
-databricks unity-catalog skills create \
-  --catalog <catalog> \
-  --schema <schema> \
-  --name databricks_sdp_generator \
-  --source-dir ".agents/skills/databricks-sdp-generator" \
-  --description "Interactive 5-phase generator for Databricks Medallion Structured Data Pipelines (SDP)"
-```
-
-Or register via the **Databricks UI (Catalog Explorer)**:
-1. Navigate to **Catalog** → `<your_catalog>` → `<your_schema>`.
-2. Select **Register Asset** / **Create** → **Skill / AI Asset**.
-3. Point to the `databricks-sdp-generator` package and confirm registration.
-
-### Govern & Grant Access
-
-Because the skill is a native Unity Catalog securable asset, manage permissions with standard UC access controls:
-
-```sql
--- Grant permission to data engineering teams
-GRANT USE CATALOG ON CATALOG <catalog> TO `data-engineers@your-company.com`;
-GRANT USE SCHEMA ON SCHEMA <catalog>.<schema> TO `data-engineers@your-company.com`;
-GRANT EXECUTE ON SKILL <catalog>.<schema>.databricks_sdp_generator TO `data-engineers@your-company.com`;
-```
 
 ### Team Discovery & Workspace Usage
 
