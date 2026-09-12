@@ -1,0 +1,58 @@
+{
+  "tables": [
+    {
+      "name": "ath_catalog.raw.customers",
+      "table_properties": {},
+      "schema": "customer_id STRING,first_name STRING,last_name STRING,email STRING,phone STRING,city STRING,country STRING,insert_date TIMESTAMP",
+      "file_format": "csv",
+      "source_path": "/Volumes/data_team/raw/source/customers/",
+      "header": "true",
+      "delimiter": ","
+    },
+    {
+      "name": "ath_catalog.raw.orders",
+      "table_properties": {},
+      "schema": "order_id STRING,customer_id STRING,order_datetime STRING,warehouse_id STRING,product_id STRING,amount STRING,quantity STRING,insert_date TIMESTAMP",
+      "file_format": "csv",
+      "source_path": "/Volumes/data_team/raw/source/orders/",
+      "header": "true",
+      "delimiter": ","
+    },
+    {
+      "name": "ath_catalog.raw.sales",
+      "table_properties": {},
+      "schema": "sale_id STRING,order_id STRING,sale_datetime STRING,payment_method STRING,gross_amount STRING,discount_amount STRING,net_amount STRING,insert_date TIMESTAMP",
+      "file_format": "csv",
+      "source_path": "/Volumes/data_team/raw/source/sales/",
+      "header": "true",
+      "delimiter": ","
+    },
+    {
+      "name": "ath_catalog.raw.products",
+      "table_properties": {},
+      "schema": "product_id STRING,product_name STRING,category_id STRING,unit_price STRING,sku STRING,insert_date TIMESTAMP",
+      "file_format": "csv",
+      "source_path": "/Volumes/data_team/raw/source/products/",
+      "header": "true",
+      "delimiter": ","
+    },
+    {
+      "name": "ath_catalog.raw.product_category",
+      "table_properties": {},
+      "schema": "category_id STRING,category_name STRING,description STRING,insert_date TIMESTAMP",
+      "file_format": "csv",
+      "source_path": "/Volumes/data_team/raw/source/product_category/",
+      "header": "true",
+      "delimiter": ","
+    },
+    {
+      "name": "ath_catalog.raw.warehouse",
+      "table_properties": {},
+      "schema": "warehouse_id STRING,warehouse_name STRING,location STRING,capacity_sqft STRING,manager_name STRING,insert_date TIMESTAMP",
+      "file_format": "csv",
+      "source_path": "/Volumes/data_team/raw/source/warehouse/",
+      "header": "true",
+      "delimiter": ","
+    }
+  ]
+}
