@@ -1,16 +1,28 @@
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
 # Customer Clean
 dp.create_streaming_table(name="ath_catalog.clean.customers")
 
+@dp.temporary_view(name="customers_latest_snapshot")
+def customers_latest_snapshot():
+    # Use dp.read() to read RAW as a batch, not a stream
+    # Partition by the primary key and sort by insert_date to keep only the newest record
+    window_spec = Window.partitionBy("customer_id").orderBy(F.col("insert_date").desc())
+    
+    return (
+        dp.read("ath_catalog.raw.customers")
+        .withColumn("rn", F.row_number().over(window_spec))
+        .filter(F.col("rn") == 1)
+        .drop("rn")
+    )
+
 dp.create_auto_cdc_from_snapshot_flow(
   target = "ath_catalog.clean.customers",
-  source = "ath_catalog.raw.customers",
-  keys=["customer_id"],
-  stored_as_scd_type = "2",
-  track_history_column_list = None,
-  track_history_except_column_list = None
+  source = "customers_latest_snapshot", # Feed it the deduplicated view
+  keys = ["customer_id"],
+  stored_as_scd_type = "2"
 )
 
 # Warehouse Clean
@@ -18,28 +30,42 @@ dp.create_streaming_table(
     name="ath_catalog.clean.warehouse"
 )
 
+@dp.temporary_view(name="warehouse_latest_snapshot")
+def warehouse_latest_snapshot():
+    window_spec = Window.partitionBy("warehouse_id").orderBy(F.col("insert_date").desc())
+    return (
+        dp.read("ath_catalog.raw.warehouse")
+        .withColumn("rn", F.row_number().over(window_spec))
+        .filter(F.col("rn") == 1)
+        .drop("rn")
+    )
+
 dp.create_auto_cdc_from_snapshot_flow(
     target="ath_catalog.clean.warehouse",
-    source="ath_catalog.raw.warehouse",
+    source="warehouse_latest_snapshot",
     keys=["warehouse_id"], 
     stored_as_scd_type="2"
 )
 
 # Product Clean
-@dp.temporary_view(name='clean_products_view')
+dp.create_streaming_table(name="ath_catalog.clean.products_scd")
+
+@dp.temporary_view(name='products_latest_snapshot')
 @dp.expect_or_fail("validate_product_id", "product_id IS NOT NULL")
 @dp.expect("validate_product_name", "product_name IS NOT NULL")
-def clean_products():
+def products_latest_snapshot():
+    window_spec = Window.partitionBy("product_id").orderBy(F.col("insert_date").desc())
     return (
-        dp.read('ath_catalog.raw.products')
-        .withColumn('unit_price', F.col('unit_price').cast("decimal(10,2)"))
+        dp.read("ath_catalog.raw.products")
+        .withColumn("rn", F.row_number().over(window_spec))
+        .filter(F.col("rn") == 1)
+        .drop("rn")
+        .withColumn("unit_price", F.col("unit_price").cast("decimal(10,2)"))
     )
-
-dp.create_streaming_table(name="ath_catalog.clean.products_scd")
 
 dp.create_auto_cdc_from_snapshot_flow(
     target="ath_catalog.clean.products_scd",
-    source="clean_products_view",
+    source="products_latest_snapshot",
     keys=["product_id"],
     stored_as_scd_type="2"
 )
